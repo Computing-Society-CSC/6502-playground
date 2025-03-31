@@ -10,15 +10,26 @@ interface AssemblerState {
 
 export const useAssemblerStore = defineStore("assembler", {
   state: (): AssemblerState => ({
-    code: `; Simple 6502 Example
-.org $8000    ; Set start address to $8000
-; Load the value #$01 into the accumulator
-LDA #$01
-; Add the value #$02 to the accumulator
-ADC #$02
-; Store the result in memory location $00
-STA $00
-BRK ; Break instruction`,
+    code: `; Hello World program for 6502
+    
+.org $8000          ; program starting address
+
+ser_out_addr = $fff1    ; serial output address
+
+reset:
+ldx #$0             ; initialize character counter
+lda test_str,x      ; load the first character (x=0)
+
+main:               ; iterate through the string
+sta ser_out_addr    ; print the character just loaded
+inx                 ; increase x by 1
+lda test_str,x      ; load the next character
+beq reset           ; if character == /0, jump to reset
+jmp main            ; else jump to main
+
+test_str: 
+    .byte "Hello world!", $0d, $0a, $0  ; "Hello world!/r/n/0"
+`,
     output: "Ready to assemble.",
     hexBytes: [],
     startAddress: 0x8000, // Default start address
