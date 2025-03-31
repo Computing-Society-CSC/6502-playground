@@ -1,11 +1,6 @@
 <template>
   <div id="main-container">
-    <h1>Vue 3 6502 Assembler & Serial Terminal</h1>
-    <p class="info">
-      Note: The Web Serial API requires a secure context (HTTPS or localhost) and is
-      primarily supported in Chrome and Edge. You may need to enable experimental web
-      platform features in some browser versions.
-    </p>
+    <h1>6502 Assembler & Serial Terminal</h1>
     <div class="tools-wrapper">
       <AssemblerComponent class="tool-panel" />
       <SerialTerminal class="tool-panel" />

@@ -317,18 +317,30 @@ watch(isConnected, (newVal, oldVal) => {
 .serial-container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  border: 1px solid #ccc;
-  padding: 15px;
-  border-radius: 5px;
-  background-color: #f9f9f9;
-  width: 100%;
+  height: 100%;
+}
+
+h2 {
+  margin: 0 0 10px 0;
+}
+
+.terminal-wrapper {
+  flex: 1;
+  min-height: 0;
+  background-color: #000;
+  border-radius: 4px;
+  padding: 4px;
+  margin-bottom: 10px;
+}
+
+.terminal-wrapper > div {
+  height: 100%;
 }
 
 .controls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .status-bar {
@@ -369,19 +381,5 @@ button:disabled {
 .error-text {
   color: #dc3545; /* Red for errors */
   font-weight: bold;
-}
-
-.terminal-wrapper {
-  flex: 1;
-  min-height: 0;
-  border: 1px solid #ccc;
-  overflow: hidden;
-  background-color: #000;
-  padding: 5px;
-}
-
-h2 {
-  margin-top: 0;
-  margin-bottom: 10px;
 }
 </style>

@@ -1,12 +1,7 @@
 <template>
   <div class="assembler-container">
     <h2>6502 Assembler</h2>
-    <textarea
-      v-model="code"
-      rows="15"
-      placeholder="Enter 6502 Assembly Code Here..."
-      spellcheck="false"
-    ></textarea>
+    <div ref="editorContainer" class="editor-container"></div>
     <button @click="handleAssemble">Assemble</button>
     <div class="output-area">
       <h3>Output:</h3>
@@ -16,20 +11,62 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+// TODO:
+// - add more directive in compiler
+// - add more common routines such as print to terminal, toggle pixels, etc.
+// - add line numbers in compiler warnings
+// - example code snippets
+// - save to local file / load from local file
+// - syntax error highlighting?
+// - clear terminal output
+// - visual widgets for interfacing the emulator
+
+import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useAssemblerStore } from "../stores/assembler";
 import { storeToRefs } from "pinia";
+import loader from "@monaco-editor/loader";
+import { configure6502Language } from "../utils/6502-monaco-config";
 
 const assemblerStore = useAssemblerStore();
-
-// Use storeToRefs to keep reactivity when destructuring state/getters
-// Use computed for direct state access or simple transformations if needed
 const { output } = storeToRefs(assemblerStore);
+const editorContainer = ref<HTMLElement | null>(null);
+let editor: any = null;
 
-// Use computed for v-model to use the action for setting
-const code = computed({
-  get: () => assemblerStore.code,
-  set: (value) => assemblerStore.setCode(value),
+const updateEditorLayout = () => {
+  if (editor) {
+    editor.layout();
+  }
+};
+
+onMounted(async () => {
+  if (!editorContainer.value) return;
+
+  const monaco = await loader.init();
+  configure6502Language(monaco);
+
+  editor = monaco.editor.create(editorContainer.value, {
+    value: assemblerStore.code,
+    language: "6502asm",
+    theme: "vs",
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    lineNumbers: "on",
+    fontSize: 14,
+    fontFamily: '"Courier New", Courier, monospace',
+  });
+
+  editor.onDidChangeModelContent(() => {
+    assemblerStore.setCode(editor.getValue());
+  });
+
+  window.addEventListener("resize", updateEditorLayout);
+});
+
+onBeforeUnmount(() => {
+  if (editor) {
+    editor.dispose();
+  }
+  window.removeEventListener("resize", updateEditorLayout);
 });
 
 const handleAssemble = () => {
@@ -49,14 +86,15 @@ const handleAssemble = () => {
   width: 100%;
 }
 
-textarea {
+.editor-container {
   flex: 1;
-  min-height: 0;
-  font-family: "Courier New", Courier, monospace;
-  font-size: 0.9em;
+  min-height: 300px;
   border: 1px solid #ccc;
-  padding: 5px;
-  resize: none;
+  border-radius: 3px;
+}
+
+textarea {
+  display: none;
 }
 
 button {
