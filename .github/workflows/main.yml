@@ -15,8 +15,6 @@ jobs:
 
       - name: Build
         run: |
-          ls -a
-          cd 6502-playground
           npm install
           npm run build-only
 
