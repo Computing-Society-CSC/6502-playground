@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { assemble } from "asm6502"; // Import the assemble function directly
+import { assemble } from "../libs/asm6502.js"; // Import the assemble function directly
 
 interface AssemblerState {
   code: string;
@@ -32,6 +32,8 @@ BRK ; Break instruction`,
 
         const result = assemble(this.code);
         this.hexBytes = result.bytecode; // Use bytecode property from result
+        console.log(this.hexBytes)
+        this.hexBytes.forEach((byte, index) => { console.log(`Index: ${index}, Byte: ${byte}`); });
         const hexString = this.hexBytes
           .map((byte) => byte.toString(16).toUpperCase().padStart(2, "0"))
           .join(" ");
