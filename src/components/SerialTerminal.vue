@@ -1,6 +1,17 @@
 <template>
   <div class="serial-container">
     <h2>Serial Terminal</h2>
+
+    <!-- Simple mode toggle -->
+    <div class="mode-toggle">
+      <button @click="showDebugger = !showDebugger" class="toggle-btn">
+        {{ showDebugger ? "Hide Debugger Controls" : "Show Debugger Controls" }}
+      </button>
+    </div>
+
+    <!-- Debugger Controls (when showDebugger is true) -->
+    <DebuggerControls v-if="showDebugger" />
+
     <div class="terminal-wrapper">
       <div ref="terminalContainer"></div>
     </div>
@@ -31,18 +42,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed } from "vue";
+import { ref, onMounted, onBeforeUnmount, watch, computed, provide } from "vue";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 import { useSerialStore } from "../stores/serial";
-import { useAssemblerStore } from "../stores/assembler"; // Import assembler store
+import { useAssemblerStore } from "../stores/assembler";
 import { storeToRefs } from "pinia";
+import DebuggerControls from "./DebuggerControls.vue";
 
 // --- Pinia Stores ---
 const serialStore = useSerialStore();
-const assemblerStore = useAssemblerStore(); // Get assembler store instance
+const assemblerStore = useAssemblerStore();
 const { isConnected, portInfo, lastError } = storeToRefs(serialStore);
-const { hexBytes } = storeToRefs(assemblerStore); // Get compiled bytes
+const { hexBytes } = storeToRefs(assemblerStore);
+
+// --- UI State ---
+const showDebugger = ref(true);
 
 // --- Refs ---
 const terminalContainer = ref<HTMLElement | null>(null);
@@ -57,6 +72,26 @@ let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 let writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
 const isSerialSupported = computed(() => "serial" in navigator);
 let keepReading = false; // Flag to control the read loop
+
+// --- Provide send function for DebuggerControls ---
+// Creates a function that the child DebuggerControls component can use to send data
+const sendSerialData = async (data: string): Promise<void> => {
+  if (!isConnected.value || !writer) {
+    term?.writeln("\r\n[Not connected]");
+    return;
+  }
+
+  try {
+    const encoder = new TextEncoder();
+    await writer.write(encoder.encode(data));
+    // Don't echo commands to the terminal - the response will show up on its own
+  } catch (error) {
+    handleSerialError("Error sending command", error);
+  }
+};
+
+// Provide this function to child components
+provide("sendSerialData", sendSerialData);
 
 // --- Lifecycle Hooks ---
 onMounted(() => {
@@ -141,15 +176,9 @@ const connect = async () => {
 
   try {
     term?.writeln("\r\nRequesting serial port...");
-    // Filter for common Arduino/microcontroller VID/PIDs - optional but helpful
-    // You might need to adjust these or remove the filter
-    // const usbVendorId = 0x2341; // Example: Arduino Uno VID
-    port = await navigator.serial.requestPort({
-      // filters: [{ usbVendorId }]
-    });
+    port = await navigator.serial.requestPort();
 
     term?.writeln("Opening port...");
-    // Common baud rate, adjust if needed
     await port.open({ baudRate: 9600 });
 
     const portDetails = port.getInfo();
@@ -159,33 +188,27 @@ const connect = async () => {
     serialStore.setConnected(true, portLabel);
     term?.writeln(`\r\nConnected to ${portLabel}`);
 
-    // Setup reader and writer
     if (port.readable && port.writable) {
       writer = port.writable.getWriter();
       reader = port.readable.getReader();
       keepReading = true;
-      readLoop(); // Start reading in the background
+      readLoop();
     } else {
       throw new Error("Port is not readable or writable");
     }
   } catch (error) {
     handleSerialError("Failed to connect", error);
-    await disconnect(); // Clean up if connection failed mid-way
+    await disconnect();
   }
 };
 
 const disconnect = async () => {
-  keepReading = false; // Signal the read loop to stop
+  keepReading = false;
 
-  // Cancel reader first
   if (reader) {
     try {
-      await reader.cancel(); // This interrupts the read() promise
-      // The releaseLock is often handled implicitly by cancel/port closure,
-      // but explicit release can prevent issues in some scenarios.
-      // reader.releaseLock(); // Be cautious with explicit releaseLock after cancel
+      await reader.cancel();
     } catch (error) {
-      // Ignore cancellation errors as they are expected
       if (!(error instanceof DOMException && error.name === "AbortError")) {
         console.warn("Error cancelling reader:", error);
       }
@@ -194,12 +217,9 @@ const disconnect = async () => {
     }
   }
 
-  // Close writer
   if (writer) {
     try {
-      // Don't await close() indefinitely if the port might be stuck
       await writer.close().catch((e) => console.warn("Error closing writer:", e));
-      // writer.releaseLock(); // Usually released by close()
     } catch (error) {
       console.warn("Error closing writer:", error);
     } finally {
@@ -207,7 +227,6 @@ const disconnect = async () => {
     }
   }
 
-  // Close port
   if (port) {
     try {
       await port.close();
@@ -219,9 +238,7 @@ const disconnect = async () => {
     }
   }
 
-  // Update state only after cleanup attempts
   serialStore.setConnected(false);
-  // Do not clear lastError on disconnect, user might want to see it
 };
 
 const readLoop = async () => {
@@ -234,33 +251,28 @@ const readLoop = async () => {
       const { value, done } = await reader.read();
 
       if (done) {
-        // Reader has been cancelled or port closed
         term.writeln("[Read loop finished: done]");
         break;
       }
 
       if (value) {
-        // Write received data directly to the terminal
         term.write(value);
       }
     } catch (error) {
-      // If keepReading is false, it means disconnect was called, expected error
       if (keepReading) {
         handleSerialError("Error reading data", error);
-        await disconnect(); // Disconnect on read error
+        await disconnect();
       } else {
         term.writeln("[Read loop finished: cancelled]");
       }
-      break; // Exit loop on error or cancellation
+      break;
     }
   }
-  // Ensure reader lock is released when loop exits, unless already handled by disconnect
+
   try {
     reader?.releaseLock();
-  } catch (e) {
-    // Ignore error if lock already released
-  }
-  reader = null; // Clear reader ref after loop finishes
+  } catch (e) {}
+  reader = null;
   console.log("Read loop exited.");
 };
 
@@ -276,7 +288,6 @@ const handleSerialError = (context: string, error: unknown) => {
   term?.writeln(`\r\nError: ${message}`);
 };
 
-// --- Function to send compiled bytes ---
 const sendCompiledBytes = async () => {
   if (!isConnected.value || !writer || hexBytes.value.length === 0) {
     term?.writeln("\r\n[Cannot send: Not connected or no compiled bytes available]");
@@ -284,7 +295,6 @@ const sendCompiledBytes = async () => {
   }
 
   try {
-    // Create the command string in the format "d<START_ADDR>,<BYTE1>,<BYTE2>..."
     const startAddr = assemblerStore.startAddress;
     const bytesString = hexBytes.value
       .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
@@ -301,13 +311,9 @@ const sendCompiledBytes = async () => {
   }
 };
 
-// --- Watchers ---
-// Optional: Watch connection state changes to update terminal UI
 watch(isConnected, (newVal, oldVal) => {
   if (newVal !== oldVal) {
-    // You could add more specific messages here if needed
     console.log(`Connection state changed: ${newVal}`);
-    // Refit terminal in case layout changes slightly
     setTimeout(() => fitAddon?.fit(), 50);
   }
 });
@@ -322,6 +328,23 @@ watch(isConnected, (newVal, oldVal) => {
 
 h2 {
   margin: 0 0 10px 0;
+}
+
+.mode-toggle {
+  margin-bottom: 10px;
+}
+
+.toggle-btn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.toggle-btn:hover {
+  background-color: #5a6268;
 }
 
 .terminal-wrapper {
@@ -379,7 +402,7 @@ button:disabled {
 }
 
 .error-text {
-  color: #dc3545; /* Red for errors */
+  color: #dc3545;
   font-weight: bold;
 }
 </style>
